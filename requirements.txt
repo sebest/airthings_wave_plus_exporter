@@ -1,0 +1,4 @@
+aiohttp==3.7
+aioprometheus==20
+bleak==0.12
+click==8
