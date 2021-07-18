@@ -9,9 +9,9 @@ from bleak import BleakScanner, BleakClient
 from typing import Optional, List, Dict, Tuple
 from aioprometheus import Gauge, Service, Registry
 
-WP_UUID = "b42e1c08-ade7-11e4-89d3-123b93f75cba"
-WP_SENSOR_UUID = "b42e2a68-ade7-11e4-89d3-123b93f75cba"
-WP_MFDATA_SN_IDX = 820
+SERVICE_UUID = "b42e1c08-ade7-11e4-89d3-123b93f75cba"
+CHAR_UUID = "b42e2a68-ade7-11e4-89d3-123b93f75cba"
+MFDATA_SN_UUID = 0x0334
 
 DEFAULT_HTTP_ADDR = "127.0.0.1"
 DEFAULT_HTTP_PORT = 9745
@@ -47,6 +47,10 @@ class WavePlusDevice(object):
             f"detected={self.detected})"
         )
 
+    async def collect_raw_data(self) -> bytearray:
+        async with BleakClient(self.address) as client:
+            return await client.read_gatt_char(CHAR_UUID)
+
     async def collect_metrics(
         self, max_tries: int = 12, sleep_between_retries: int = 5
     ) -> Optional[Tuple[int]]:
@@ -69,11 +73,13 @@ class WavePlusDevice(object):
         exc = None
         for retry in range(max_tries):
             try:
-                async with BleakClient(self.address) as client:
-                    raw_data = await client.read_gatt_char(WP_SENSOR_UUID)
-                    raw_metrics = struct.unpack("BBBBHHHHHHHH", raw_data)
-                    break
+                raw_data = await asyncio.wait_for(self.collect_raw_data(), timeout=15)
+                raw_metrics = struct.unpack("BBBBHHHHHHHH", raw_data)
+                break
             except Exception as exc:
+                logger.warning(
+                    "exception while collecting metrics [retry=%d]: %s", retry, exc
+                )
                 await asyncio.sleep(sleep_between_retries)
         collect_duration = int(time.time() - start_time)
 
@@ -119,9 +125,9 @@ class WavePlusDeviceDetector(object):
         devices = await BleakScanner.discover(timeout=self.scan_duration)
         for device in devices:
             uuids = device.metadata.get("uuids", [])
-            if WP_UUID in uuids:
+            if SERVICE_UUID in uuids:
                 try:
-                    data = device.metadata["manufacturer_data"][WP_MFDATA_SN_IDX]
+                    data = device.metadata["manufacturer_data"][MFDATA_SN_UUID]
                     serial_number = self.parse_serial_number(data)
                     if serial_number:
                         self.sn_map[serial_number] = device.address
