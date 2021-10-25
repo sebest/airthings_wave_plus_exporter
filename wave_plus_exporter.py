@@ -81,24 +81,22 @@ class WavePlusDevice(object):
                     "exception while collecting metrics [retry=%d]: %s", retry, exc
                 )
                 await asyncio.sleep(sleep_between_retries)
-        collect_duration = int(time.time() - start_time)
+        else:
+            logger.error(
+                "failed to collect metrics from %s (sn=%s) after %ds",
+                self.name,
+                self.serial_number,
+                int(time.time() - start_time),
+            )
 
         if raw_metrics:
             logger.debug(
                 "collected metrics from %s (sn=%s) in %ds with %d retries: %s",
                 self.name,
                 self.serial_number,
-                collect_duration,
+                int(time.time() - start_time),
                 retry,
                 raw_metrics,
-            )
-        else:
-            logger.error(
-                "failed to collect metrics from %s (sn=%s) after %ds: %s",
-                self.name,
-                self.serial_number,
-                collect_duration,
-                exc,
             )
         return raw_metrics
 
@@ -218,16 +216,23 @@ class WavePlusExporter(object):
             await asyncio.sleep(self.update_metrics_frequency)
 
     async def start(self) -> None:
+        detected_devices = 0
         # Detect devices and set their address
         detector = WavePlusDeviceDetector()
         for device in self.devices:
             await detector.detect(device)
+            if device.detected:
+                detected_devices += 1
 
-        svc = Service(self.sensors.registry)
-        await svc.start(addr=self.http_addr, port=self.http_port)
-        logger.info("Serving prometheus metrics on: %s", svc.metrics_url)
-
-        await self.update_metrics()
+        # TODO: add a coroutine to try to detect devices in the background, not
+        # only during start-up.
+        if detected_devices:
+            svc = Service(self.sensors.registry)
+            await svc.start(addr=self.http_addr, port=self.http_port)
+            logger.info("Serving prometheus metrics on: %s", svc.metrics_url)
+            await self.update_metrics()
+        else:
+            logger.error("No device detected!")
 
 
 @click.command()
