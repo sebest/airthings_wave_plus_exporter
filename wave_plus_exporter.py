@@ -7,7 +7,8 @@ import struct
 import logging
 from bleak import BleakScanner, BleakClient
 from typing import Optional, List, Dict, Tuple
-from aioprometheus import Gauge, Service, Registry
+from aioprometheus import Gauge, Registry
+from aioprometheus.service import Service
 
 SERVICE_UUID = "b42e1c08-ade7-11e4-89d3-123b93f75cba"
 CHAR_UUID = "b42e2a68-ade7-11e4-89d3-123b93f75cba"
